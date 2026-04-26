@@ -2,6 +2,7 @@ import express from 'express';
 import session from 'express-session';
 import config from './config.js';
 import { streamChat, OllamaClientError } from './lib/ollamaClient.js';
+import { bufferBySentence } from './lib/sentenceBuffer.js';
 import * as context from './lib/context.js';
 
 const app = express();
@@ -41,7 +42,7 @@ app.post('/chat', async (req, res) => {
 
   let assistantBuffer = '';
   try {
-    for await (const token of streamChat(context.get(sessionId))) {
+    for await (const token of bufferBySentence(streamChat(context.get(sessionId)))) {
       assistantBuffer += token;
       res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }
