@@ -114,7 +114,7 @@ try {
     $sc.Save()
     Write-Host "Desktop shortcut created at: $shortcutPath."
 } catch {
-    Write-Host "Could not create the desktop shortcut. This is not fatal — you can still start OllamaFile by running scripts\start-windows.cmd."
+    Write-Host "Could not create the desktop shortcut. This is not fatal - you can still start OllamaFile by running scripts\start-windows.cmd."
 }
 
 # --- Done -------------------------------------------------------------------
