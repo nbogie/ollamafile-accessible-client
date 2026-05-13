@@ -8,7 +8,9 @@ OllamaFile is a small web page that runs on your own computer and lets you chat 
 
 ## Step 1: Install Docker Desktop
 
-Docker Desktop is the program that runs OllamaFile and the AI model in the background. Download the installer from the Docker Desktop for Windows download page at https://www.docker.com/products/docker-desktop. Run the installer, accept the defaults, and reboot when it asks you to. After the reboot, open the Start menu, type Docker Desktop, and press Enter to launch it. Wait until Docker Desktop says it is running.
+Docker Desktop is the program that runs OllamaFile and the AI model in the background. Download the installer from the Docker Desktop for Windows download page at https://www.docker.com/products/docker-desktop. For AMD windows that would be https://desktop.docker.com/win/main/arm64/Docker%20Desktop%20Installer.exe?utm_source=docker&utm_medium=webreferral&utm_campaign=dd-smartbutton&utm_location=module.
+
+Run the installer, accept the defaults, and reboot when it asks you to. After the reboot, open the Start menu, type Docker Desktop, and press Enter to launch it. Wait until Docker Desktop says it is running.
 
 You only do this step once.
 
