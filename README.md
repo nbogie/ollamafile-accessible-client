@@ -2,6 +2,10 @@
 
 A screen-reader-friendly web UI for chatting with a local Ollama model.
 
+## For Windows users (Chad's path)
+
+See `docs/setup-windows.md` for a screen-reader-friendly setup guide. The helper script at `scripts/setup-windows.cmd` automates first-time install and verifies each step.
+
 ## Quickstart
 
 1. Ensure Docker Desktop is running.
