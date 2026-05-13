@@ -59,6 +59,11 @@
       content: "(no response yet)";
       color: #888;
     }
+    /* Each streamed sentence is its own <p> child so VoiceOver treats it
+       as a discrete log entry and queues announcements. Block-level with
+       tight margins so the structure is visually obvious during testing. */
+    #response-live p { margin: 0 0 0.5em 0; padding: 0; }
+    #response-live p:last-child { margin-bottom: 0; }
     #history { list-style: none; padding: 0; margin: 0; }
     #history li {
       margin: 0.5rem 0;
@@ -105,10 +110,22 @@
     <div id="alert" role="alert" class="sr-only"></div>
 
     <h2>Current response</h2>
-    <div id="response-live" aria-live="polite" aria-label="Streaming response"></div>
+    <!-- Visible only — NOT a live region. VoiceOver+Safari interrupts itself
+         when a single polite region keeps changing during streaming. Audio
+         announcement happens via the double-buffered #live-a / #live-b
+         pair below. -->
+    <div id="response-live" aria-label="Streaming response"></div>
+    <!-- Hidden single live region. Chunks arrive from the server faster
+         than VoiceOver can speak them, so a JS queue throttles writes
+         here based on estimated read time per chunk. -->
+    <div id="live-announcer" class="sr-only" aria-live="polite"></div>
 
     <h2>Conversation history</h2>
     <ul id="history" aria-label="Conversation history"></ul>
+
+    <footer style="margin-top: 2rem; color: #888; font-size: 0.875rem;">
+      <span id="build-id">build 2</span>
+    </footer>
   </main>
 
   <script>
@@ -119,7 +136,63 @@
     const statusEl = document.getElementById('status');
     const alertEl = document.getElementById('alert');
     const responseEl = document.getElementById('response-live');
+    const liveAnnouncer = document.getElementById('live-announcer');
     const historyEl = document.getElementById('history');
+
+    // Throttled announcement queue. Chunks arrive ~2s apart from the
+    // server; VoiceOver takes ~5–10s to speak each sentence. Writing the
+    // next chunk to the live region while VO is still mid-sentence
+    // interrupts it. We instead estimate read time from word count
+    // (~200 wpm + 30% safety) and wait that long between writes.
+    const announceQueue = [];
+    let announceBusy = false;
+
+    function announceChunk(text) {
+      announceQueue.push(text);
+      if (!announceBusy) processAnnounceQueue();
+    }
+
+    function processAnnounceQueue() {
+      if (announceQueue.length === 0) {
+        announceBusy = false;
+        return;
+      }
+      announceBusy = true;
+      const text = announceQueue.shift();
+      liveAnnouncer.textContent = text;
+      const words = text.trim().split(/\s+/).filter(Boolean).length;
+      const ms = Math.max(2000, (words / 200) * 60 * 1000 * 1.3);
+      setTimeout(processAnnounceQueue, ms);
+    }
+
+    function resetAnnouncer() {
+      announceQueue.length = 0;
+      announceBusy = false;
+      liveAnnouncer.textContent = '';
+    }
+
+    // Tracks an in-flight stream so we can no-op a re-submit instead of
+    // disabling the textarea (which forced a focus jump and interrupted
+    // the last sentence in VoiceOver).
+    let streaming = false;
+
+    // Holds the just-finished assistant response until the next user
+    // action. We don't move it to history or clear #response-live at
+    // end-of-stream because doing so wipes the chunks underneath
+    // VoiceOver while it's still announcing the last sentence. Server
+    // already persists it (see GET /history).
+    let pendingAssistantMessage = null;
+
+    function finalizePending() {
+      if (pendingAssistantMessage !== null) {
+        appendHistoryItem('assistant', pendingAssistantMessage);
+        pendingAssistantMessage = null;
+      }
+      responseEl.textContent = '';
+      // Cancel any still-pending announcements from the previous turn so
+      // they don't leak into the new turn.
+      resetAnnouncer();
+    }
 
     function setStatus(text) {
       statusEl.textContent = text;
@@ -159,14 +232,16 @@
     }
 
     async function sendPrompt(prompt) {
+      streaming = true;
       sendBtn.disabled = true;
-      promptEl.disabled = true;
+      // Move any pending previous response into history and clear the live
+      // region — done up here, not at end-of-stream, so VoiceOver had a
+      // chance to finish announcing the previous response uninterrupted.
+      finalizePending();
       setStatus('Thinking…');
-      const startedAt = Date.now();
 
       appendHistoryItem('user', prompt);
       promptEl.value = '';
-      responseEl.textContent = '';
       let assistantBuffer = '';
 
       try {
@@ -199,9 +274,11 @@
 
             if (payload.token) {
               assistantBuffer += payload.token;
-              // Append a text node rather than reassigning textContent so screen
-              // readers only announce the new token, not the whole buffer.
-              responseEl.appendChild(document.createTextNode(payload.token));
+              const visibleText = payload.token.trim();
+              const chunk = document.createElement('p');
+              chunk.textContent = visibleText;
+              responseEl.appendChild(chunk);
+              announceChunk(visibleText);
             } else if (payload.error) {
               throw new Error(payload.error);
             } else if (payload.done) {
@@ -211,22 +288,26 @@
           }
         }
 
-        appendHistoryItem('assistant', assistantBuffer);
-        responseEl.textContent = '';
-        const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-        setStatus(`Done (${elapsed}s).`);
+        // Don't move to history, don't clear #response-live, don't update
+        // #status. Any DOM mutation now races with VoiceOver finishing
+        // the last sentence and tends to cut it off. Park the buffered
+        // text in pendingAssistantMessage; finalizePending() runs at the
+        // start of the next sendPrompt or on New conversation. Status
+        // stays at "Thinking…" briefly — the natural audio silence after
+        // the last sentence is the AT user's "done" cue.
+        pendingAssistantMessage = assistantBuffer;
       } catch (err) {
         reportError(err.message);
         responseEl.textContent = '';
       } finally {
+        streaming = false;
         sendBtn.disabled = false;
-        promptEl.disabled = false;
-        promptEl.focus();
       }
     }
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
+      if (streaming) return;
       const prompt = promptEl.value.trim();
       if (!prompt) return;
       sendPrompt(prompt);
@@ -245,6 +326,8 @@
         await fetch('/new', { method: 'POST' });
         historyEl.innerHTML = '';
         responseEl.textContent = '';
+        resetAnnouncer();
+        pendingAssistantMessage = null;
         setStatus('New conversation started.');
       } catch (err) {
         reportError(`could not start a new conversation (${err.message})`);
