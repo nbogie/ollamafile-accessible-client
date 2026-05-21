@@ -26,7 +26,7 @@ The second way, if you have Git installed, is to open Command Prompt and run:
 git clone https://github.com/nbogie/ollamafile-accessible-client.git ollamafile
 ```
 
-Either way, you end up with a folder called `ollamafile` containing all the project files.
+Either way, you end up with a folder called `ollamafile` containing all the project files. If you plan to take updates as Neill ships them, the git clone way is recommended — the update script in this project uses `git pull` to fetch new changes, and that only works on a clone. See the "How to install updates" section below.
 
 ## Step 3: Run the first-time setup script
 
@@ -56,6 +56,27 @@ If you want a one-click way to launch OllamaFile from your desktop, the setup sc
 Once setup is done, day-to-day use is simple. Press Enter on the `Start OllamaFile` shortcut on your desktop. The shortcut runs `scripts\start-windows.cmd`, which starts the two containers in the background and opens the page in your default browser. Use the page for as long as you like, then close the browser tab when you are finished. The containers keep running in the background, ready for the next time, until you stop them or shut your PC down.
 
 If you prefer the command line, open Command Prompt, change into the `ollamafile` folder, and run `docker compose up -d`. Then open http://localhost:5000 in your browser.
+
+## How to install updates
+
+When Neill ships a new version, you can pull it down and restart OllamaFile with one double-click.
+
+First time only, install Git for Windows from https://git-scm.com/download/win. Run the installer and accept the defaults. You only do this once. Git is the tool that downloads new versions of OllamaFile.
+
+After that, to install an update, open File Explorer, go into the `ollamafile` folder, then into `scripts`, and press Enter on `update-windows.cmd`. The script does six things and tells you what it is doing at each step:
+
+1. Checks that Docker is installed.
+2. Checks that Docker Desktop is running.
+3. Checks that Git is installed.
+4. Downloads the latest changes.
+5. Rebuilds the OllamaFile app and starts both containers.
+6. Verifies that the web page is responding on port 5000.
+
+When the script finishes, it opens http://localhost:5000 in your default browser. The first time it runs, it also creates a desktop shortcut called `Update OllamaFile`, so from then on you can just press Enter on that shortcut whenever Neill tells you a new version is ready.
+
+The update script is safe to run any time. If there is nothing new to download, it tells you so and exits without changing anything.
+
+If you installed OllamaFile by downloading the zip rather than using git clone, the update script cannot use `git pull`. Either re-install using the git clone instructions in Step 2, or ask Neill for help.
 
 ## How to stop OllamaFile
 
