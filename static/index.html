@@ -128,7 +128,7 @@
     <ul id="history" aria-label="Conversation history"></ul>
 
     <footer style="margin-top: 2rem; color: #888; font-size: 0.875rem;">
-      <span id="build-id">build 5</span>
+      <span id="build-id">build 7</span>
     </footer>
   </main>
 
@@ -175,6 +175,35 @@
       liveAnnouncer.textContent = '';
     }
 
+    // After the stream ends we still want #status to clear from "Thinking…"
+    // so sighted users see a "done" cue. We can't just setStatus immediately
+    // because VoiceOver may still be working through the throttled
+    // announcement queue, and writing to the polite #status region would
+    // queue noise behind the last sentence. Poll until the announcer is
+    // idle, then write once. Cancelled by sendPrompt / newBtn so it can't
+    // overwrite a fresher status.
+    let statusUpdateTimer = null;
+
+    function cancelEndOfStreamStatus() {
+      if (statusUpdateTimer) {
+        clearTimeout(statusUpdateTimer);
+        statusUpdateTimer = null;
+      }
+    }
+
+    function scheduleEndOfStreamStatus() {
+      cancelEndOfStreamStatus();
+      const check = () => {
+        if (announceBusy || announceQueue.length > 0) {
+          statusUpdateTimer = setTimeout(check, 250);
+          return;
+        }
+        statusUpdateTimer = null;
+        if (!streaming) setStatus('Reply complete.');
+      };
+      statusUpdateTimer = setTimeout(check, 250);
+    }
+
     // Tracks an in-flight stream so we can no-op a re-submit instead of
     // disabling the textarea (which forced a focus jump and interrupted
     // the last sentence in VoiceOver).
@@ -209,6 +238,9 @@
       alertEl.textContent = `Error: ${message}`;
     }
 
+    // Reverse-chronological insertion: newest entries go to the top of the
+    // list, nearest the prompt input and current response. The visual flow
+    // from top to bottom is therefore latest → oldest.
     function appendHistoryItem(role, content) {
       const li = document.createElement('li');
       li.className = role;
@@ -220,7 +252,7 @@
       contentEl.textContent = content;
       li.appendChild(roleEl);
       li.appendChild(contentEl);
-      historyEl.appendChild(li);
+      historyEl.prepend(li);
     }
 
     async function loadHistory() {
@@ -238,6 +270,7 @@
     async function sendPrompt(prompt) {
       streaming = true;
       sendBtn.disabled = true;
+      cancelEndOfStreamStatus();
       // Move any pending previous response into history and clear the live
       // region — done up here, not at end-of-stream, so VoiceOver had a
       // chance to finish announcing the previous response uninterrupted.
@@ -298,8 +331,11 @@
         // text in pendingAssistantMessage; finalizePending() runs at the
         // start of the next sendPrompt or on New conversation. Status
         // stays at "Thinking…" briefly — the natural audio silence after
-        // the last sentence is the AT user's "done" cue.
+        // the last sentence is the AT user's "done" cue. The visible
+        // #status text is reset by scheduleEndOfStreamStatus once the
+        // announcer queue drains, so sighted users see a "done" cue too.
         pendingAssistantMessage = assistantBuffer;
+        scheduleEndOfStreamStatus();
       } catch (err) {
         reportError(err.message);
         responseEl.textContent = '';
@@ -331,6 +367,7 @@
         historyEl.innerHTML = '';
         responseEl.textContent = '';
         resetAnnouncer();
+        cancelEndOfStreamStatus();
         pendingAssistantMessage = null;
         setStatus('New conversation started.');
       } catch (err) {
