@@ -122,6 +122,50 @@ describe('streamChat', () => {
           assert.ok(err instanceof OllamaClientError, 'should be OllamaClientError');
           assert.equal(err.kind, 'non_200');
           assert.ok(err.message.includes('503'), 'message should include status code');
+          assert.ok(err.userMessage, 'userMessage should be set');
+          assert.ok(
+            err.userMessage.includes('503'),
+            'userMessage should mention the HTTP status',
+          );
+          return true;
+        },
+      );
+    });
+  });
+
+  describe('model not found (404 with ollama not-found body)', () => {
+    let server;
+
+    before(async () => {
+      server = await makeServer((req, res) => {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end('{"error":"model \'llama3.2:1b\' not found"}');
+      });
+      config.ollamaHost = serverUrl(server);
+    });
+
+    after(() => server.close());
+
+    it('throws OllamaClientError with kind model_not_found', async () => {
+      await assert.rejects(
+        () => collect(streamChat([{ role: 'user', content: 'hi' }])),
+        (err) => {
+          assert.ok(err instanceof OllamaClientError, 'should be OllamaClientError');
+          assert.equal(err.kind, 'model_not_found');
+          return true;
+        },
+      );
+    });
+
+    it('userMessage names the missing model and gives an actionable command', async () => {
+      await assert.rejects(
+        () => collect(streamChat([{ role: 'user', content: 'hi' }])),
+        (err) => {
+          assert.ok(err.userMessage.includes('llama3.2:1b'), 'should name the model');
+          assert.ok(
+            err.userMessage.includes('ollama pull'),
+            'should suggest the pull command',
+          );
           return true;
         },
       );
@@ -148,6 +192,7 @@ describe('streamChat', () => {
         (err) => {
           assert.ok(err instanceof OllamaClientError, 'should be OllamaClientError');
           assert.equal(err.kind, 'malformed_json');
+          assert.ok(err.userMessage, 'userMessage should be set');
           return true;
         },
       );
@@ -166,6 +211,7 @@ describe('streamChat', () => {
         (err) => {
           assert.ok(err instanceof OllamaClientError, 'should be OllamaClientError');
           assert.equal(err.kind, 'connection_refused');
+          assert.ok(err.userMessage, 'userMessage should be set');
           return true;
         },
       );

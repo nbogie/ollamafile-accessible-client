@@ -49,8 +49,16 @@ app.post('/chat', async (req, res) => {
     context.append(sessionId, { role: 'assistant', content: assistantBuffer });
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   } catch (err) {
-    const kind = err instanceof OllamaClientError ? err.kind : 'unknown';
-    res.write(`data: ${JSON.stringify({ error: kind })}\n\n`);
+    // Developer-facing message goes to server logs for diagnostics.
+    console.error('[chat]', err.message);
+    // User-facing message goes to the client. OllamaClientError builds a
+    // phrasing that's safe to render; anything else falls back to a generic
+    // line so internal error text never leaks to the UI.
+    const userMessage =
+      err instanceof OllamaClientError
+        ? err.userMessage
+        : 'Something went wrong. Please try again.';
+    res.write(`data: ${JSON.stringify({ error: userMessage })}\n\n`);
   } finally {
     res.end();
   }
