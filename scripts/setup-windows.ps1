@@ -1,9 +1,13 @@
 # OllamaFile first-time setup for Windows.
 #
+# Lifecycle: routine — first-time install, but safe to re-run; idempotent.
+#
 # Verifies Docker is present and running, starts both containers, downloads the
 # language model, then sanity-checks that the web app and the model both respond.
 # Designed to be read out loud by a screen reader, so messages are full sentences
 # and one step is announced before the work for that step begins.
+#
+# Paired thin launcher: setup-windows.cmd.
 
 $ErrorActionPreference = "Stop"
 

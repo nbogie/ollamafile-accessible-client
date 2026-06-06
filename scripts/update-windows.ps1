@@ -1,9 +1,16 @@
 # OllamaFile update script for Windows.
 #
+# Lifecycle: routine — run any time to fetch the latest version. Idempotent.
+#
 # Pulls the latest source from GitHub, rebuilds the OllamaFile app container,
 # and starts everything. Designed to be safe to run repeatedly: a no-op if
 # you already have the latest version and the containers are already running.
 # Mirrors the screen-reader-friendly style of setup-windows.ps1.
+#
+# Requires: Git for Windows (uses `git pull` directly). If the install is
+# WSL-only, use apply-auto-pull-update.{cmd,ps1} once to bootstrap.
+#
+# Paired thin launcher: update-windows.cmd.
 
 $ErrorActionPreference = "Stop"
 

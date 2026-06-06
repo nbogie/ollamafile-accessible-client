@@ -1,4 +1,9 @@
 @echo off
+rem Start OllamaFile: brings the docker compose stack up in detached mode
+rem and opens the web UI in the default browser.
+rem
+rem Lifecycle: routine — daily use. Idempotent (compose up is a no-op if
+rem already running).
 setlocal
 cd /d "%~dp0.."
 

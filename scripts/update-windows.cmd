@@ -1,4 +1,6 @@
 @echo off
+rem Thin launcher for update-windows.ps1. See that file for the description
+rem of what this script does, the steps it performs, and its lifecycle.
 setlocal
 cd /d "%~dp0.."
 

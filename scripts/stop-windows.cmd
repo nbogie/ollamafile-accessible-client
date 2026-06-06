@@ -1,4 +1,8 @@
 @echo off
+rem Stop OllamaFile: brings the docker compose stack down. The Ollama
+rem named volume (cached model) is preserved.
+rem
+rem Lifecycle: routine — daily use.
 setlocal
 cd /d "%~dp0.."
 
