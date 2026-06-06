@@ -9,7 +9,10 @@ services:
       - SESSION_SECRET
       - SYSTEM_PROMPT
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   ollama:
@@ -18,7 +21,30 @@ services:
       - "11434:11434"
     volumes:
       - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 5s
     restart: unless-stopped
+
+  # One-shot init container: waits for the ollama server to be healthy, then
+  # pulls the configured model. Exits when done. The app's depends_on chain
+  # blocks it from starting until this has completed successfully, so the
+  # very first `docker compose up` after install Just Works without anyone
+  # having to type `ollama pull` manually. On subsequent `up`s, the pull is
+  # a no-op (Ollama detects the model is already present and exits fast).
+  ollama-init:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    entrypoint: ["ollama", "pull"]
+    command: ["${OLLAMA_MODEL:-llama3.2:1b}"]
+    restart: "no"
 
 volumes:
   ollama: {}
