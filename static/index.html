@@ -102,7 +102,9 @@
       <button type="submit" id="send" aria-hidden="true" tabindex="-1">Send</button>
       <button type="button">Copy</button>
       <button type="button" id="new-convo" aria-label="Start a new conversation">New conversation</button>
-      <button type="button">Stop</button>
+      <button type="button" id="stop-btn"
+              aria-label="Stop response (Escape key)"
+              aria-keyshortcuts="Escape">Stop</button>
       <button type="button">Toggle status updates</button>
       <button type="button">Send feedback to Neill</button>
     </form>
@@ -128,7 +130,7 @@
     <ul id="history" aria-label="Conversation history"></ul>
 
     <footer style="margin-top: 2rem; color: #888; font-size: 0.875rem;">
-      <span id="build-id">build 7</span>
+      <span id="build-id">build 8</span>
     </footer>
   </main>
 
@@ -137,6 +139,7 @@
     const promptEl = document.getElementById('prompt');
     const sendBtn = document.getElementById('send');
     const newBtn = document.getElementById('new-convo');
+    const stopBtn = document.getElementById('stop-btn');
     const statusEl = document.getElementById('status');
     const alertEl = document.getElementById('alert');
     const responseEl = document.getElementById('response-live');
@@ -209,6 +212,11 @@
     // the last sentence in VoiceOver).
     let streaming = false;
 
+    // Set while a fetch('/chat') is in flight so the Stop button can abort it.
+    // Aborting closes the SSE connection; the server picks that up via
+    // req.on('close') and cancels the upstream Ollama call.
+    let currentAbortController = null;
+
     // Holds the just-finished assistant response until the next user
     // action. We don't move it to history or clear #response-live at
     // end-of-stream because doing so wipes the chunks underneath
@@ -270,6 +278,7 @@
     async function sendPrompt(prompt) {
       streaming = true;
       sendBtn.disabled = true;
+      currentAbortController = new AbortController();
       cancelEndOfStreamStatus();
       // Move any pending previous response into history and clear the live
       // region — done up here, not at end-of-stream, so VoiceOver had a
@@ -286,6 +295,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt }),
+          signal: currentAbortController.signal,
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -337,12 +347,42 @@
         pendingAssistantMessage = assistantBuffer;
         scheduleEndOfStreamStatus();
       } catch (err) {
-        reportError(err.message);
-        responseEl.textContent = '';
+        // User pressed Stop: keep whatever tokens arrived so they're moved
+        // into history on the next action, mirroring the server, which also
+        // persists the partial reply. Don't report it as an error — the
+        // assertive "Stopped." announcement is the user's confirmation.
+        if (err.name === 'AbortError') {
+          if (assistantBuffer) pendingAssistantMessage = assistantBuffer;
+        } else {
+          reportError(err.message);
+          responseEl.textContent = '';
+        }
       } finally {
         streaming = false;
         sendBtn.disabled = false;
+        currentAbortController = null;
       }
+    }
+
+    function stopGeneration() {
+      // No-op when there's nothing to interrupt. Lets users press the Stop
+      // button or Escape with no consequence outside of an active reply.
+      const reading = announceBusy || announceQueue.length > 0;
+      if (!streaming && !reading) return;
+
+      if (currentAbortController) currentAbortController.abort();
+      resetAnnouncer();
+      cancelEndOfStreamStatus();
+      setStatus('Stopped.');
+      // The #alert region is role="alert" — assertive — so writing to it
+      // interrupts whatever the screen reader is currently saying. The
+      // polite #live-announcer cannot do this; clearing its textContent
+      // doesn't stop in-flight speech. Briefly hold "Stopped." then clear
+      // so a subsequent real error can re-trigger the same region.
+      alertEl.textContent = 'Stopped.';
+      setTimeout(() => {
+        if (alertEl.textContent === 'Stopped.') alertEl.textContent = '';
+      }, 1500);
     }
 
     form.addEventListener('submit', (e) => {
@@ -359,6 +399,22 @@
         form.requestSubmit();
       }
     });
+
+    stopBtn.addEventListener('click', stopGeneration);
+
+    // Escape from anywhere on the page stops generation and narration.
+    // Chosen because JAWS doesn't claim it in forms mode, Windows 11 doesn't
+    // bind it at OS level, and it's the conventional chat-stop key. Use
+    // capture so we beat anything else that might handle it.
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Escape') {
+          stopGeneration();
+        }
+      },
+      true,
+    );
 
     newBtn.addEventListener('click', async () => {
       if (!confirm('Start a new conversation? Current history will be cleared.')) return;

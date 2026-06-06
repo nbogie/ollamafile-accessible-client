@@ -40,15 +40,40 @@ app.post('/chat', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  // Cancel the upstream Ollama call when the client disconnects (Stop button,
+  // tab close, network drop). Without this, Ollama keeps generating after
+  // the user hit Stop — wastes CPU and ties up the model for ~20s.
+  //
+  // Use res.on('close'), NOT req.on('close'). On Node 16+, the request
+  // emits 'close' as soon as its body has been fully read — for a small
+  // POST that's milliseconds in, well before streaming finishes. The
+  // response only emits 'close' if the connection terminates before
+  // res.end() was reached, which is exactly the disconnect signal we want.
+  const upstream = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) upstream.abort();
+  });
+
   let assistantBuffer = '';
   try {
-    for await (const token of bufferBySentence(streamChat(context.get(sessionId)))) {
+    for await (const token of bufferBySentence(
+      streamChat(context.get(sessionId), upstream.signal),
+    )) {
       assistantBuffer += token;
-      res.write(`data: ${JSON.stringify({ token })}\n\n`);
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }
     context.append(sessionId, { role: 'assistant', content: assistantBuffer });
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
   } catch (err) {
+    // Client aborted (Stop button): save the partial reply so reload still
+    // shows a coherent conversation, and exit quietly — the connection is
+    // already gone so we can't write an error event to it.
+    if (err.name === 'AbortError' || upstream.signal.aborted) {
+      if (assistantBuffer) {
+        context.append(sessionId, { role: 'assistant', content: assistantBuffer });
+      }
+      return;
+    }
     // Developer-facing message goes to server logs for diagnostics.
     console.error('[chat]', err.message);
     // User-facing message goes to the client. OllamaClientError builds a
@@ -58,9 +83,9 @@ app.post('/chat', async (req, res) => {
       err instanceof OllamaClientError
         ? err.userMessage
         : 'Something went wrong. Please try again.';
-    res.write(`data: ${JSON.stringify({ error: userMessage })}\n\n`);
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify({ error: userMessage })}\n\n`);
   } finally {
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 });
 
